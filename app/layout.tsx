@@ -3,9 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
+  title: 'Nexus Intelligence | Criminal Network & Case Analysis',
+  description: 'Forensic criminal network analysis platform with Neo4j graph topology and Section 63 BSA cryptographic chain of custody.',
   icons: {
     icon: [
       {

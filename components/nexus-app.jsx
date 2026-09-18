@@ -1,44 +1,828 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import * as Icons from 'lucide-react'
-import { alerts, entities, evidence, insights, investigations, navItems, relationships } from '@/lib/mock-data'
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { 
+  Shield, LayoutDashboard, Share2, Search as SearchIcon, 
+  FolderArchive, Bell, HelpCircle, UserPlus, History, 
+  LogOut, ChevronRight, CheckCircle2, AlertTriangle, 
+  FolderOpen, ShieldCheck, Flame, Activity, Upload, 
+  FileText, ExternalLink, Menu, X, ArrowUpRight,
+  Building, Phone, MapPin, Truck, CreditCard, User
+} from 'lucide-react';
 
-const icon = (name, props = {}) => { const I = Icons[name] || Icons.Circle; return <I {...props} /> }
-const pageNames = { '/dashboard': 'Dashboard', '/investigate': 'Investigate', '/network': 'Network Explorer', '/alerts': 'Alerts', '/data': 'Data Sources', '/help': 'Help Center' }
-const tone = { HIGH: 'red', MEDIUM: 'amber', LOW: 'green' }
+import { useAuthStore } from '@/lib/auth-store';
+import NetworkGraph from './network-graph';
+import BlockchainShield from './blockchain-shield';
+import ProvisionOfficerModal from './provision-officer-modal';
+import AuditLedgerModal from './audit-ledger-modal';
 
-function Badge({ children, kind = 'muted' }) { return <span className={`badge badge-${kind.toLowerCase()}`}>{children}</span> }
-function Info({ label, children }) { return <div className="info-wrap"><span className="info-label">{label}</span>{children}</div> }
-function Tooltip({ label, children }) { return <span className="tooltip-wrap">{children}<button className="info-dot" aria-label={`About ${label}`}>i</button><span className="tooltip-content" role="tooltip">{label}</span></span> }
-function SectionTitle({ eyebrow, title, action }) { return <div className="section-title"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2></div>{action}</div> }
-function Metric({ label, value, change, iconName }) { return <div className="metric"><div className="metric-top"><span>{label}</span><span className="metric-icon">{icon(iconName, { size: 15 })}</span></div><strong>{value}</strong><small>{change}</small></div> }
-function InsightCard({ item, compact = false, onAction }) { return <article className={`insight-card ${compact ? 'compact' : ''}`}><div className="insight-head"><Badge kind={tone[item.priority]}>{item.priority} PRIORITY</Badge><span className="source-dot">{item.source}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="insight-meta"><span><Tooltip label="Indicates how strongly available data supports an AI-generated finding.">Confidence</Tooltip> <b>{item.confidence}</b></span><span>{item.timestamp}</span>{item.stat && <span className="insight-stat">{item.stat}</span>}</div><button className="text-button" onClick={onAction}>Investigate <Icons.ArrowUpRight size={14} /></button></article> }
-function EmptyState({ iconName, title, text, action }) { return <div className="empty-state">{icon(iconName, { size: 24 })}<h3>{title}</h3><p>{text}</p>{action}</div> }
+const PAGE_TITLES = {
+  '/dashboard': 'Investigation Dashboard',
+  '/network': 'Criminal Network Explorer',
+  '/investigate': 'Suspect Dossier Explorer',
+  '/data': 'Digital Evidence Vault',
+  '/alerts': 'Intelligence Alerts',
+  '/help': 'Field Guide & Section 63 BSA'
+};
 
-function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }) { const pathname = usePathname(); return <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}><div className="brand"><span className="brand-mark">N</span><span className="brand-name">NEXUS</span><button className="icon-button collapse-button" onClick={() => setCollapsed(!collapsed)} aria-label="Collapse navigation">{icon(collapsed ? 'PanelLeftOpen' : 'PanelLeftClose', { size: 17 })}</button></div><div className="workspace"><span className="status-dot" /> <span>Intelligence workspace</span></div><nav><div className="nav-label">Workspace</div>{navItems.map(item => <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className={`nav-item ${pathname === item.href ? 'active' : ''}`} title={collapsed ? item.label : undefined}>{icon(item.icon, { size: 17 })}<span>{item.label}</span>{item.label === 'Alerts' && <b className="nav-count">6</b>}</Link>)}<div className="nav-label nav-label-lower">Support</div><Link href="/help" onClick={() => setMobileOpen(false)} className={`nav-item ${pathname === '/help' ? 'active' : ''}`}>{icon('CircleHelp', { size: 17 })}<span>Help & shortcuts</span></Link></nav><div className="sidebar-bottom"><div className="system-status"><span className="status-dot" /> <span>Systems operational</span></div><div className="user-mini"><span className="avatar">AS</span><span><b>Aditya Singh</b><small>Investigator</small></span><Icons.MoreHorizontal size={16} /></div></div></aside> }
+/* --------------------------------------------------------------------------
+   SIDEBAR
+-------------------------------------------------------------------------- */
+function Sidebar({ mobileOpen, setMobileOpen, onOpenProvision, onOpenAudit }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, canProvisionOfficer, canViewAudit, logout } = useAuthStore();
+  const initials = user?.name ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'PO';
 
-function Topbar({ onSearch, onMenu }) { const pathname = usePathname(); return <header className="topbar"><button className="mobile-menu icon-button" onClick={onMenu} aria-label="Open navigation">{icon('Menu', { size: 20 })}</button><div className="top-title"><span className="crumb">NEXUS /</span><strong>{pageNames[pathname] || 'Dashboard'}</strong></div><button className="global-search" onClick={onSearch}><Icons.Search size={16} /><span>Search entities, cases, records...</span><kbd>⌘ K</kbd></button><div className="top-actions"><button className="icon-button has-notification" aria-label="Notifications">{icon('Bell', { size: 17 })}<i /></button><button className="icon-button" aria-label="Help">{icon('CircleHelp', { size: 17 })}</button><div className="top-profile"><span className="avatar">AS</span><span>Aditya Singh</span><Icons.ChevronDown size={14} /></div></div></header> }
+  const navItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/network', label: 'Network Graph', icon: Share2 },
+    { href: '/investigate', label: 'Investigate', icon: SearchIcon },
+    { href: '/data', label: 'Evidence Vault', icon: FolderArchive },
+    { href: '/alerts', label: 'Alerts', icon: Bell, count: 3 },
+    { href: '/help', label: 'Documentation', icon: HelpCircle }
+  ];
 
-function CommandPalette({ open, onClose, onSelect }) { const [query, setQuery] = useState(''); const results = entities.filter(e => e.name.toLowerCase().includes(query.toLowerCase())).slice(0, 5); useEffect(() => { const f = e => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); onSelect() } if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [onClose, onSelect]); if (!open) return null; return <div className="modal-backdrop" onMouseDown={onClose}><div className="command-palette" onMouseDown={e => e.stopPropagation()}><div className="command-input"><Icons.Search size={18} /><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search NEXUS..." /><kbd>ESC</kbd></div><div className="command-section">{query ? 'Entities' : 'Quick navigation'}</div>{query ? results.map(e => <button className="command-row" key={e.id} onClick={() => { onClose(); window.location.href = `/investigate?entity=${e.id}` }}><span className="entity-symbol">{e.initials}</span><span><b>{e.name}</b><small>{e.type}</small></span><Icons.ArrowUpRight size={15} /></button>) : navItems.slice(0, 4).map(n => <Link href={n.href} className="command-row" key={n.href} onClick={onClose}>{icon(n.icon, { size: 16 })}<span><b>{n.label}</b><small>Go to {n.label.toLowerCase()}</small></span><kbd>↵</kbd></Link>)}</div></div> }
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
 
-function Dashboard({ go }) { return <div className="page"><div className="page-header"><div><div className="eyebrow">MONDAY · 14 SEP 2026</div><h1>Good morning, Investigator.</h1><p>Here&apos;s what needs your attention today.</p></div><button className="primary-button" onClick={() => go('/investigate')}><Icons.Search size={16} /> Investigate an entity</button></div><div className="metrics"><Metric label="Active cases" value="24" change="↑ 3 since last week" iconName="FolderOpen" /><Metric label="Entities identified" value="1,284" change="↑ 8.4% this month" iconName="ScanFace" /><Metric label="Suspicious patterns" value="17" change="4 need review" iconName="Activity" /><Metric label="High priority alerts" value="6" change="2 new today" iconName="ShieldAlert" /></div><div className="dashboard-grid"><section className="panel investigations"><SectionTitle eyebrow="CASE ACTIVITY" title="Recent investigations" action={<button className="subtle-button" onClick={() => go('/investigate')}>View all <Icons.ArrowUpRight size={14} /></button>} /><div className="table-wrap"><table><thead><tr><th>Case</th><th>Investigation</th><th>Priority</th><th>Subject</th><th>Updated</th><th /></tr></thead><tbody>{investigations.map(row => <tr key={row[0]}><td className="mono">{row[0]}</td><td><b>{row[1]}</b></td><td><Badge kind={tone[row[2]]}>{row[2]}</Badge></td><td>{row[3]}</td><td className="muted-text">{row[4]}</td><td><button className="row-action" onClick={() => go('/investigate')}>Open <Icons.ChevronRight size={14} /></button></td></tr>)}</tbody></table></div></section><section className="panel insights"><SectionTitle eyebrow="MACHINE-ASSISTED REVIEW" title="AI insights" action={<Tooltip label="A machine-generated observation based on patterns detected in available data."><Icons.Info size={15} /></Tooltip>} />{insights.map(i => <InsightCard key={i.title} item={i} onAction={() => go('/network')} />)}</section></div></div> }
+  return (
+    <>
+      {/* Mobile Backdrop */}
+      {mobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
 
-function Investigate({ go, openEvidence }) { const [query, setQuery] = useState(''); const [selected, setSelected] = useState(entities[0]); const matches = entities.filter(e => e.name.toLowerCase().includes(query.toLowerCase())).slice(0, 5); return <div className="page"><div className="page-header narrow"><div><div className="eyebrow">ENTITY RESOLUTION</div><h1>Investigate an entity</h1><p>Search across people, organizations, locations, vehicles and records.</p></div></div><div className="search-zone"><div className="entity-search"><Icons.Search size={19} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a person, phone number, vehicle, organization..." /><kbd>⌘ K</kbd></div>{query && <div className="suggestions">{matches.length ? matches.map(e => <button key={e.id} onClick={() => { setSelected(e); setQuery('') }}><span className="entity-symbol">{e.initials}</span><span><b>{e.name}</b><small>{e.type}</small></span><Badge kind={tone[e.priority]}>{e.priority}</Badge></button>) : <EmptyState iconName="SearchX" title="No entities found" text="Try a different name, identifier or entity type." />}</div>}<div className="recent-searches"><span>Recent searches</span>{['Rajesh Kumar', 'Amit Sharma', 'XYZ Logistics', 'MH-01-AB-1234'].map(x => <button key={x} onClick={() => setSelected(entities.find(e => e.name === x) || entities[0])}>{x}</button>)}</div></div><div className="entity-layout"><section className="panel entity-main"><div className="entity-heading"><div className="entity-avatar">{selected.initials}</div><div><div className="eyebrow">{selected.type} · ENTITY ID NXS-{selected.id.toUpperCase()}</div><h2>{selected.name}</h2><div className="entity-actions"><Badge kind={tone[selected.priority]}>{selected.priority} PRIORITY</Badge><span className="observed-label">Observed across 6 sources</span></div></div><div className="score-box"><Tooltip label="An AI-generated investigation priority indicator based on detected relationships, activities and suspicious patterns. It does not establish criminality or guilt."><span>Investigation priority</span></Tooltip><strong>{selected.score}<small>/100</small></strong><Badge kind={tone[selected.priority]}>{selected.priority}</Badge></div></div><div className="divider" /><div className="details-grid"><div><SectionTitle eyebrow="OBSERVED DATA" title="Basic information" action={<Tooltip label="Information directly extracted or recorded in available source material."><Icons.Info size={14} /></Tooltip>} /><dl><Info label="Name"><dd>{selected.name}</dd></Info><Info label="Aliases"><dd>{selected.aliases || 'A. Sharma, Amit S.'}</dd></Info><Info label="Known locations"><dd>{selected.locations || 'Andheri, Mumbai Central'}</dd></Info><Info label="Phone numbers"><dd>{selected.phone || '+91 97••• 2281'}</dd></Info><Info label="Vehicles"><dd>{selected.vehicles || 'MH-04-CD-5678'}</dd></Info><Info label="Organizations"><dd>{selected.organizations || 'Apex Trading'}</dd></Info></dl></div><div><SectionTitle eyebrow="RELATIONSHIP SUMMARY" title="Connections" action={<Tooltip label="A relationship is a connection between two entities identified from available records."><Icons.Info size={14} /></Tooltip>} /><div className="connection-list">{[['People', '12'], ['Organizations', '2'], ['Locations', '5'], ['Vehicles', '2'], ['Financial links', '8']].map(([l, v]) => <div key={l}><span>{l}</span><b>{v}</b></div>)}</div><div className="network-mini"><div className="network-mini-line" /><span>Network <b>#12</b></span><small>27 entities · 34 relationships</small></div></div></div><div className="divider" /><SectionTitle eyebrow="MIXED SIGNALS" title="Key findings" /><div className="finding-list">{[['AI ANALYSIS', 'Connected to 12 people in Network #12', 'Graph structure'], ['OBSERVED DATA', 'Appears in 3 financial transaction clusters', 'Financial records'], ['OBSERVED DATA', 'Frequently co-located with Person B', 'Surveillance report'], ['AI ANALYSIS', 'Potential connection to Organization X', 'Entity resolution']].map(([kind, text, source]) => <div className="finding" key={text}><span className={`finding-tag ${kind === 'AI ANALYSIS' ? 'analysis' : ''}`}>{kind}</span><div><b>{text}</b><small>{source}</small></div><Icons.ChevronRight size={15} /></div>)}</div><div className="entity-footer"><button className="secondary-button" onClick={() => go('/network')}>{icon('Share2', { size: 15 })} View network</button><button className="secondary-button" onClick={openEvidence}>{icon('FileSearch', { size: 15 })} View evidence</button><button className="primary-button" onClick={() => alert('Rajesh Kumar added to Investigation #1024')}>{icon('Plus', { size: 15 })} Add to investigation</button></div></section></div></div> }
+      <aside className={`fixed lg:static top-0 bottom-0 left-0 w-64 bg-[#0B0F19] border-r border-slate-800/80 z-50 flex flex-col transition-transform duration-200 ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        {/* Brand Header */}
+        <div className="h-16 px-6 flex items-center justify-between border-b border-slate-800/80">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <Shield className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-semibold text-slate-100 text-sm tracking-tight block">Nexus</span>
+              <span className="text-[10px] text-slate-500 font-medium block -mt-0.5">Criminal Intelligence</span>
+            </div>
+          </Link>
+          <button 
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden p-1 text-slate-400 hover:text-slate-200"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-const graphPositions = { rajesh: [50, 49], xyz: [50, 16], amit: [23, 50], vehicle: [77, 49], phone: [78, 76], andheri: [22, 82], navi: [50, 88], vikram: [7, 28], account: [7, 77], apex: [88, 20], neha: [88, 88] }
-function Network({ go, openEvidence }) { const [selected, setSelected] = useState('rajesh'); const [hovered, setHovered] = useState(null); const [zoom, setZoom] = useState(1); const [filters, setFilters] = useState(false); const connected = relationships.filter(r => r[0] === (hovered || selected) || r[1] === (hovered || selected)).flatMap(r => [r[0], r[1]]); const node = entities.find(e => e.id === selected); return <div className="page network-page"><div className="page-header network-head"><div><div className="eyebrow">LINK ANALYSIS · NETWORK #12</div><h1>Rajesh Kumar&apos;s network</h1><p>27 entities · 34 relationships · Updated 12 min ago</p></div><div className="network-actions"><button className="secondary-button" onClick={() => setFilters(!filters)}>{icon('SlidersHorizontal', { size: 15 })} Filters</button><button className="secondary-button" onClick={openEvidence}>{icon('FileSearch', { size: 15 })} Evidence</button></div></div>{filters && <div className="filter-bar"><b>Entity types</b>{['People', 'Organizations', 'Locations', 'Vehicles', 'Accounts'].map(x => <label key={x}><input type="checkbox" defaultChecked /> {x}</label>)}<span className="filter-divider" /><b>Time range</b><select><option>Last 30 days</option><option>Last 90 days</option></select></div>}<div className="network-layout"><section className="graph-panel"><div className="graph-toolbar"><button onClick={() => setZoom(z => Math.min(z + .15, 1.6))} aria-label="Zoom in">+</button><button onClick={() => setZoom(z => Math.max(z - .15, .6))} aria-label="Zoom out">−</button><button onClick={() => setZoom(1)} aria-label="Reset view">{icon('RotateCcw', { size: 14 })}</button><button onClick={() => setZoom(1)} aria-label="Fit network">Fit</button><span className="zoom-value">{Math.round(zoom * 100)}%</span></div><div className="graph-canvas"><div className="graph-grid" /><svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ transform: `scale(${zoom})` }} className="edges">{relationships.map(([a, b, label]) => { const p1 = graphPositions[a], p2 = graphPositions[b]; const active = connected.includes(a) && connected.includes(b); return <g key={`${a}-${b}`} className={active ? 'edge-active' : ''}><line x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} /><text x={(p1[0] + p2[0]) / 2} y={(p1[1] + p2[1]) / 2 - 1}>{label}</text></g> })}</svg><div className="nodes-layer" style={{ transform: `scale(${zoom})` }}>{entities.map(e => { const [x, y] = graphPositions[e.id] || [50, 50]; const active = e.id === selected || e.id === hovered || connected.includes(e.id); return <button key={e.id} className={`graph-node node-${e.type.toLowerCase()} ${e.id === selected ? 'selected' : ''} ${active ? 'connected' : 'dimmed'}`} style={{ left: `${x}%`, top: `${y}%` }} onClick={() => setSelected(e.id)} onMouseEnter={() => setHovered(e.id)} onMouseLeave={() => setHovered(null)}><span className="node-shape">{icon(e.type === 'PERSON' ? 'UserRound' : e.type === 'ORGANIZATION' ? 'Building2' : e.type === 'LOCATION' ? 'MapPin' : e.type === 'VEHICLE' ? 'CarFront' : e.type === 'PHONE' ? 'Phone' : 'Landmark', { size: e.id === 'rajesh' ? 19 : 15 })}</span><span className="node-label">{e.name}</span></button> })}</div><div className="graph-legend"><span><i className="legend-dot person" /> People</span><span><i className="legend-dot org" /> Organizations</span><span><i className="legend-dot location" /> Locations</span><span><i className="legend-dot asset" /> Assets</span></div></div></section><aside className="network-side"><div className="panel node-panel"><SectionTitle eyebrow="SELECTED ENTITY" title={node?.name || 'Entity'} action={<button className="icon-button"><Icons.X size={15} /></button>} /><div className="node-type"><Badge kind={tone[node?.priority || 'LOW']}>{node?.type || 'ENTITY'}</Badge><span>Entity ID NXS-{selected?.toUpperCase()}</span></div><div className="side-score"><span>Investigation priority</span><b>{node?.score || 48}<small>/100</small></b><div className="score-bar"><i style={{ width: `${node?.score || 48}%` }} /></div></div><div className="side-section"><span className="eyebrow">KEY RELATIONSHIPS</span>{relationships.filter(r => r.includes(selected)).slice(0, 4).map(r => { const other = entities.find(e => e.id === (r[0] === selected ? r[1] : r[0])); return <div className="relationship-row" key={r[0] + r[1]}><span className="entity-symbol small">{other?.initials}</span><span><b>{other?.name}</b><small>{r[2]}</small></span></div> })}</div><div className="side-buttons"><button className="primary-button" onClick={() => go('/investigate')}>Investigate entity</button><button className="secondary-button" onClick={openEvidence}>View evidence</button></div></div><div className="panel network-insights"><SectionTitle eyebrow="MACHINE-ASSISTED REVIEW" title="AI insights" /><InsightCard item={insights[0]} compact onAction={() => go('/investigate')} /></div></aside></div></div> }
+        {/* Station Jurisdiction Badge */}
+        <div className="px-6 py-3 border-b border-slate-800/40 bg-slate-950/30 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="text-xs text-slate-400">Station: <b className="text-slate-300">{user?.stationCode || 'MUM-AND-04'}</b></span>
+        </div>
 
-function Alerts({ go }) { const [filter, setFilter] = useState('ALL'); const filtered = alerts.filter(a => filter === 'ALL' || a.severity === filter || (filter === 'UNREAD' && a.unread)); return <div className="page"><div className="page-header"><div><div className="eyebrow">ATTENTION INBOX</div><h1>Alerts</h1><p>Prioritized findings that may require further investigation.</p></div><span className="alert-summary"><b>6</b> high priority</span></div><div className="filter-tabs">{['ALL', 'HIGH', 'MEDIUM', 'LOW', 'UNREAD'].map(x => <button key={x} className={filter === x ? 'active' : ''} onClick={() => setFilter(x)}>{x === 'ALL' ? 'All alerts' : x[0] + x.slice(1).toLowerCase()}</button>)}</div><div className="alerts-list">{filtered.map(a => <article className={`alert-row ${a.unread ? 'unread' : ''}`} key={a.id}><div className={`alert-severity ${a.severity.toLowerCase()}`} /> <div className="alert-icon">{icon(a.severity === 'HIGH' ? 'ShieldAlert' : a.severity === 'MEDIUM' ? 'TriangleAlert' : 'Info', { size: 17 })}</div><div className="alert-content"><div className="alert-title"><Badge kind={tone[a.severity]}>{a.severity}</Badge><h3>{a.title}</h3>{a.unread && <i className="unread-dot" />}</div><p>{a.description}</p><div className="alert-meta"><span>{a.entity}</span><span>{a.time}</span><span>{a.source}</span></div></div><button className="row-action" onClick={() => go('/investigate')}>Review <Icons.ArrowUpRight size={14} /></button></article>)}{!filtered.length && <EmptyState iconName="CheckCircle2" title="You&apos;re all caught up" text="No high-priority alerts require your attention." />}</div></div> }
+        {/* Navigation Items */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Workspaces
+          </div>
 
-function DataSources() { const [processing, setProcessing] = useState(false); const [done, setDone] = useState(false); const [file, setFile] = useState(null); const start = () => { setProcessing(true); setDone(false); setTimeout(() => setDone(true), 2400) }; return <div className="page"><div className="page-header"><div><div className="eyebrow">INGESTION PIPELINE</div><h1>Data sources</h1><p>Import records to extract entities and discover relationships.</p></div></div><div className="data-layout"><section className="panel upload-panel"><SectionTitle eyebrow="NEW SOURCE" title="Upload records" /><div className={`dropzone ${file ? 'has-file' : ''}`} onClick={() => setFile({ name: 'intelligence_report_aug.txt' })} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); setFile({ name: e.dataTransfer.files[0]?.name || 'uploaded-record.csv' }) }}>{file ? <><div className="file-icon">{icon('FileCheck2', { size: 22 })}</div><b>{file.name}</b><span>Ready to process · Click to replace</span></> : <><div className="upload-icon">{icon('UploadCloud', { size: 23 })}</div><b>Drop files here</b><span>or <u>browse files</u></span><small>CSV · PDF · TXT · JSON · Max 50 MB</small></>}</div><div className="form-field"><label>Data type</label><select><option>FIR / Police Report</option><option>Call Detail Records</option><option>Financial Transactions</option><option>Surveillance Report</option><option>Intelligence Report</option></select></div><button className="primary-button process-button" disabled={!file} onClick={start}>{icon('Play', { size: 15 })} Process data</button></section><section className="panel source-list"><SectionTitle eyebrow="CONNECTED SOURCES" title="Source history" action={<Badge kind="green">6 active</Badge>} />{[['Police Reports', '47 documents', 'Updated today', 'FileText'], ['Call Detail Records', '12,408 records', 'Updated 2h ago', 'PhoneCall'], ['Financial Transactions', '3,829 records', 'Updated yesterday', 'Landmark'], ['Surveillance Reports', '18 documents', 'Updated 3d ago', 'Eye']].map(([name, count, update, ico]) => <div className="source-row" key={name}><span className="source-icon">{icon(ico, { size: 17 })}</span><span><b>{name}</b><small>{count} · {update}</small></span><span className="source-live"><i /> Active</span><Icons.MoreHorizontal size={16} /></div>)}</section></div>{processing && <div className="modal-backdrop"><div className="process-modal">{done ? <><div className="success-mark">{icon('Check', { size: 23 })}</div><div className="eyebrow">PIPELINE COMPLETE</div><h2>Processing complete</h2><p>Your records are ready to explore in the knowledge graph.</p><div className="result-stats"><div><b>1,284</b><span>Entities extracted</span></div><div><b>463</b><span>Relationships discovered</span></div><div><b>12</b><span>Patterns detected</span></div></div><button className="primary-button" onClick={() => setProcessing(false)}>View results</button></> : <><div className="processing-spinner" /><div className="eyebrow">NEXUS PIPELINE</div><h2>Processing data</h2><p>Analyzing <b>{file?.name}</b> across the intelligence pipeline.</p><div className="process-steps">{['File uploaded', 'Text extracted', 'Entities identified', 'Relationships identified', 'Running AI analysis', 'Updating knowledge graph'].map((x, i) => <div key={x} className={i < 4 ? 'complete' : i === 4 ? 'current' : ''}><span>{i < 4 ? '✓' : i === 4 ? '●' : '○'}</span>{x}</div>)}</div></>}</div></div>}</div> }
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  isActive 
+                    ? 'bg-blue-600 text-white font-semibold' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className="w-4 h-4" />
+                  <span>{item.label}</span>
+                </div>
+                {item.count && (
+                  <span className={`px-1.5 py-0.5 text-[10px] rounded font-bold ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {item.count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
 
-function Help({ restart }) { const topics = [['Getting started', 'How to investigate an entity', 'How to read the network', 'How to understand AI insights', 'How to review alerts'], ['Understanding NEXUS', 'Entities', 'Relationships', 'Investigation priority', 'Network influence', 'Confidence', 'AI insights']]; return <div className="page"><div className="page-header"><div><div className="eyebrow">FIELD MANUAL</div><h1>Help center</h1><p>Learn the core workflows and concepts behind NEXUS.</p></div><button className="secondary-button" onClick={restart}>{icon('RotateCcw', { size: 15 })} Restart product tour</button></div><div className="help-grid">{topics.map(([title, ...items]) => <section className="panel help-card" key={title}><div className="eyebrow">{title}</div>{items.map(item => <button key={item}>{item}<Icons.ArrowUpRight size={14} /></button>)}</section>)}<section className="panel help-card shortcuts"><div className="eyebrow">Keyboard shortcuts</div><div><span>Global search</span><kbd>⌘ K</kbd></div><div><span>Close dialog</span><kbd>Esc</kbd></div><div><span>Open help</span><kbd>?</kbd></div></section><section className="panel about-card"><div className="nexus-emblem">N</div><div><h3>NEXUS Intelligence Workspace</h3><p>Decision support for connecting fragmented records. AI findings are analytical signals, not proof of criminality or guilt.</p><small>Prototype build · v0.9.2</small></div></section></div></div> }
+          {/* Admin Tools */}
+          {(canProvisionOfficer() || canViewAudit()) && (
+            <div className="pt-5 mt-4 border-t border-slate-800/60">
+              <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Administration
+              </div>
+              {canProvisionOfficer() && (
+                <button
+                  type="button"
+                  onClick={onOpenProvision}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900 transition-colors"
+                >
+                  <UserPlus className="w-4 h-4 text-amber-400" />
+                  <span>Provision Officers</span>
+                </button>
+              )}
+              {canViewAudit() && (
+                <button
+                  type="button"
+                  onClick={onOpenAudit}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900 transition-colors"
+                >
+                  <History className="w-4 h-4 text-blue-400" />
+                  <span>Audit Ledger</span>
+                </button>
+              )}
+            </div>
+          )}
+        </nav>
 
-function Evidence({ open, onClose }) { if (!open) return null; return <div className="modal-backdrop" onMouseDown={onClose}><aside className="evidence-drawer" onMouseDown={e => e.stopPropagation()}><div className="drawer-head"><div><div className="eyebrow">SOURCE MATERIAL</div><h2>Evidence</h2></div><button className="icon-button" onClick={onClose} aria-label="Close evidence">{icon('X', { size: 18 })}</button></div><div className="evidence-type"><span className="source-icon">{icon('PhoneCall', { size: 17 })}</span><span><b>{evidence.source}</b><small>{evidence.document}</small></span></div><div className="evidence-meta"><Info label="Date"><dd>{evidence.date}</dd></Info><Info label="Entities"><dd>{evidence.entities}</dd></Info><Info label="Relationship"><dd><Badge kind="blue">{evidence.relationship}</Badge></dd></Info></div><div className="evidence-block"><div className="eyebrow">EXTRACTED INFORMATION · OBSERVED DATA</div><p>&quot;{evidence.snippet}&quot;</p></div><div className="evidence-block ai"><div className="eyebrow">AI INTERPRETATION</div><p>This relationship contributes to a larger network connection. It is one signal among multiple source records.</p><div className="confidence-line"><span>Confidence</span><b>87%</b></div></div><button className="secondary-button full" onClick={onClose}>Close evidence</button></aside></div> }
+        {/* Officer Footer Badge */}
+        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-blue-400 shrink-0">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-200 truncate">{user?.name || 'Officer'}</div>
+                <div className="text-[10px] text-slate-500 font-mono truncate">{user?.pno || 'OFFICER'}</div>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
 
-function Tour({ onDone }) { const [step, setStep] = useState(0); const items = [{ title: 'Start with Investigate', text: 'Search for a person, phone number, vehicle, organization or other entity.', icon: 'Search' }, { title: 'Explore the network', text: 'See how entities connect through calls, transactions, locations and other relationships.', icon: 'Share2' }, { title: 'Review AI insights', text: 'Review patterns and anomalies detected from the available data.', icon: 'Sparkles' }, { title: 'Stay ahead of alerts', text: 'Find high-priority findings that may require further investigation.', icon: 'Bell' }]; return <div className="tour-backdrop"><div className="tour-card"><div className="tour-progress">{items.map((_, i) => <i key={i} className={i <= step ? 'active' : ''} />)}</div><div className="tour-icon">{icon(items[step].icon, { size: 21 })}</div><div className="eyebrow">QUICK TOUR · 0{step + 1} / 04</div><h2>{items[step].title}</h2><p>{items[step].text}</p><div className="tour-actions"><button className="subtle-button" onClick={onDone}>Skip tour</button><button className="primary-button" onClick={() => step === 3 ? onDone() : setStep(step + 1)}>{step === 3 ? 'Finish' : 'Next'} <Icons.ArrowRight size={15} /></button></div></div></div> }
+/* --------------------------------------------------------------------------
+   TOPBAR
+-------------------------------------------------------------------------- */
+function Topbar({ onMenu }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
 
-export default function NexusApp({ initialPage }) { const pathname = usePathname(); const router = useRouter(); const [collapsed, setCollapsed] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const [evidenceOpen, setEvidenceOpen] = useState(false); const [tour, setTour] = useState(false); useEffect(() => { if (!localStorage.getItem('nexus-tour-complete')) setTour(true) }, []); const doneTour = () => { localStorage.setItem('nexus-tour-complete', '1'); setTour(false) }; const go = href => router.push(href); const page = pathname || initialPage || '/dashboard'; return <div className="app-shell"><Sidebar collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /><div className="main-shell"><Topbar onSearch={() => setSearchOpen(true)} onMenu={() => setMobileOpen(true)} /><main>{page === '/investigate' ? <Investigate go={go} openEvidence={() => setEvidenceOpen(true)} /> : page === '/network' ? <Network go={go} openEvidence={() => setEvidenceOpen(true)} /> : page === '/alerts' ? <Alerts go={go} /> : page === '/data' ? <DataSources /> : page === '/help' ? <Help restart={() => setTour(true)} /> : <Dashboard go={go} />}</main></div><CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={() => setSearchOpen(true)} /><Evidence open={evidenceOpen} onClose={() => setEvidenceOpen(false)} />{tour && <Tour onDone={doneTour} />}</div> }
+  const roleName = user?.role === 'SUPERVISOR_SP' ? 'Supervisor SP' 
+    : user?.role === 'CYBER_ANALYST' ? 'Cyber Analyst' 
+    : 'Investigating Officer';
+
+  return (
+    <header className="h-16 px-6 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between gap-4 sticky top-0 z-30">
+      <div className="flex items-center gap-3">
+        <button 
+          onClick={onMenu} 
+          className="lg:hidden p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-800"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <h2 className="text-sm font-semibold text-slate-100">{PAGE_TITLES[pathname] || 'Workspace'}</h2>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+          <span className="font-medium text-slate-300">{roleName}</span>
+          <span className="text-slate-500 text-[10px]">({user?.clearanceLevel || 'LEVEL_2'})</span>
+        </div>
+
+        <button
+          onClick={async () => {
+            await logout();
+            router.push('/login');
+          }}
+          className="text-xs font-medium text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors"
+        >
+          Sign Out
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   DASHBOARD VIEW (NO SPLIT SCREEN!)
+-------------------------------------------------------------------------- */
+function DashboardView({ go }) {
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/cases', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.cases) setCases(data.cases);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Page Heading */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-100">Criminal Network Command Center</h1>
+          <p className="text-xs text-slate-400 mt-1">Cross-jurisdictional intelligence and immutable evidence chain of custody.</p>
+        </div>
+        <button
+          onClick={() => go('/network')}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg flex items-center gap-2 transition-colors cursor-pointer w-fit"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Launch Network Explorer</span>
+        </button>
+      </div>
+
+      {/* KPI Stats Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 rounded-xl bg-[#111827] border border-slate-800">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span>Active Cases</span>
+            <FolderOpen className="w-4 h-4 text-blue-400" />
+          </div>
+          <div className="text-2xl font-semibold text-slate-100">{cases.length || 3}</div>
+          <div className="text-[11px] text-emerald-400 mt-1 font-medium">All active under jurisdiction</div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#111827] border border-slate-800">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span>Tracked Entities</span>
+            <User className="w-4 h-4 text-purple-400" />
+          </div>
+          <div className="text-2xl font-semibold text-slate-100">18</div>
+          <div className="text-[11px] text-slate-400 mt-1">Suspects, phones & accounts</div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#111827] border border-slate-800">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span>Blockchain Exhibits</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-semibold text-slate-100">6</div>
+          <div className="text-[11px] text-emerald-400 mt-1 font-medium">100% Tamper-Free Verified</div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#111827] border border-slate-800">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+            <span>Key Ringleaders</span>
+            <Flame className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="text-2xl font-semibold text-slate-100">2</div>
+          <div className="text-[11px] text-amber-400 mt-1 font-medium">High centrality index</div>
+        </div>
+      </div>
+
+      {/* Reactive Blockchain Shield */}
+      <BlockchainShield caseId="CASE-1024" />
+
+      {/* Investigations Table (Full Width) */}
+      <div className="rounded-xl bg-[#111827] border border-slate-800 overflow-hidden">
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">Active Investigation Dossiers</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Assigned criminal syndicates and custody records</p>
+          </div>
+          <button
+            onClick={() => go('/network')}
+            className="text-xs font-medium text-blue-400 hover:text-blue-300 flex items-center gap-1"
+          >
+            <span>Network View</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-900/50 border-b border-slate-800 text-slate-400 font-medium">
+              <tr>
+                <th className="py-3 px-4">Case ID</th>
+                <th className="py-3 px-4">Investigation Title</th>
+                <th className="py-3 px-4">Category</th>
+                <th className="py-3 px-4">Suspects</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {(cases.length > 0 ? cases : [
+                { id: 'CASE-1024', caseNumber: 'FIR-2026-MUM-1024', title: 'Maritime Hawala & Contraband Network', category: 'Syndicate Smuggling', suspectCount: 6, status: 'ACTIVE', isSealed: false },
+                { id: 'CASE-1021', caseNumber: 'FIR-2026-MUM-1021', title: 'Automated Ransomware Syndicate', category: 'Cyber Extortion', suspectCount: 4, status: 'SEALED', isSealed: true },
+                { id: 'CASE-1018', caseNumber: 'FIR-2026-MUM-1018', title: 'Synthetic Narcotics Distribution', category: 'Narcotics Cartel', suspectCount: 5, status: 'ACTIVE', isSealed: false }
+              ]).map(c => (
+                <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
+                  <td className="py-3.5 px-4 font-mono font-semibold text-blue-400">{c.caseNumber || c.id}</td>
+                  <td className="py-3.5 px-4 font-medium text-slate-100">{c.title}</td>
+                  <td className="py-3.5 px-4">
+                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-medium">
+                      {c.category}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4">{c.suspectCount || 6} linked nodes</td>
+                  <td className="py-3.5 px-4">
+                    {c.isSealed ? (
+                      <span className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-semibold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        Sealed (BSA-63)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Active Investigation
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3.5 px-4 text-right">
+                    <button
+                      onClick={() => go('/network')}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                    >
+                      Explore Graph
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Recent Intelligence & Pattern Insights (Grid Below Table, No Awkward Split Screen!) */}
+      <div>
+        <h3 className="text-sm font-semibold text-slate-100 mb-3">Detected Syndicate Patterns</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                HIGH SEVERITY
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">94% confidence</span>
+            </div>
+            <h4 className="text-xs font-semibold text-slate-100">Layered Hawala Settlement Channel</h4>
+            <p className="text-xs text-slate-400 line-clamp-2">
+              Multi-jurisdictional funds transfer path detected between offshore entity and domestic accounts.
+            </p>
+            <button onClick={() => go('/network')} className="text-xs font-medium text-blue-400 hover:text-blue-300 pt-1 flex items-center gap-1">
+              <span>View in Graph</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                MEDIUM SEVERITY
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">89% confidence</span>
+            </div>
+            <h4 className="text-xs font-semibold text-slate-100">Burner Phone Cell Tower Cluster</h4>
+            <p className="text-xs text-slate-400 line-clamp-2">
+              Repeated co-location of burner SIM cards near Nhava Sheva coastal dock boundaries.
+            </p>
+            <button onClick={() => go('/network')} className="text-xs font-medium text-blue-400 hover:text-blue-300 pt-1 flex items-center gap-1">
+              <span>View in Graph</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                ANALYTICS
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">84% confidence</span>
+            </div>
+            <h4 className="text-xs font-semibold text-slate-100">Transit Vehicle ANPR Overlap</h4>
+            <p className="text-xs text-slate-400 line-clamp-2">
+              Commercial transport MH-04-AZ-9921 observed moving freight between Panvel and port terminal.
+            </p>
+            <button onClick={() => go('/network')} className="text-xs font-medium text-blue-400 hover:text-blue-300 pt-1 flex items-center gap-1">
+              <span>View in Graph</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   INVESTIGATE VIEW (CLEAN DOSSIER, NO SPLIT SCREEN!)
+-------------------------------------------------------------------------- */
+function InvestigateView({ go }) {
+  const [search, setSearch] = useState('');
+  const [selectedEntity, setSelectedEntity] = useState('person-1');
+
+  const entities = [
+    { id: 'person-farooq', name: 'Farooq (Financial Broker)', type: 'PERSON', role: 'Hawala Financial Conduit & Broker', risk: 'HIGH', score: 89, phone: '+91 97690 11204', org: 'Apex Global Trading', location: 'Dongri, Mumbai', aliases: 'Farooq Seth / Chacha' },
+    { id: 'person-1', name: 'Rajesh Kumar', type: 'PERSON', role: 'Syndicate Ringleader', risk: 'HIGH', score: 94, phone: '+91 98201 44891', org: 'Oceanic Freight Logistics', location: 'Navi Mumbai', aliases: 'RK / Bhaijaan' },
+    { id: 'person-2', name: 'Tariq Merchant', type: 'PERSON', role: 'Hawala Financial Broker', risk: 'HIGH', score: 81, phone: '+971 50 882 1943', org: 'Apex Global Trading', location: 'Dubai / Mumbai', aliases: 'Merchant' },
+    { id: 'org-1', name: 'Oceanic Freight Logistics Ltd', type: 'ORGANIZATION', role: 'Shell Logistics Front', risk: 'HIGH', score: 88, phone: '022-27891022', org: 'CIN-U63090MH2019PTC1092', location: 'Nhava Sheva' },
+    { id: 'account-1', name: 'HDFC A/C 50200091823', type: 'ACCOUNT', role: 'Primary Layering Account', risk: 'HIGH', score: 82, phone: 'IFSC: HDFC0000060', org: 'Oceanic Freight Ltd', location: 'Fort, Mumbai' },
+    { id: 'phone-1', name: '+91 98201 44891', type: 'PHONE', role: 'Burner Coordinator Handset', risk: 'MEDIUM', score: 72, phone: 'IMEI: 864209041238910', org: 'Airtel Mumbai', location: 'Tower Cell MH-402' },
+    { id: 'vehicle-1', name: 'MH-04-AZ-9921 (Tata Prima)', type: 'VEHICLE', role: 'Smuggling Transport Asset', risk: 'MEDIUM', score: 60, phone: 'ANPR Registered', org: 'Oceanic Freight Ltd', location: 'Panvel, Raigad' }
+  ];
+
+  const filtered = entities.filter(e => 
+    e.name.toLowerCase().includes(search.toLowerCase()) || 
+    e.role.toLowerCase().includes(search.toLowerCase()) ||
+    e.type.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const active = entities.find(e => e.id === selectedEntity) || entities[0];
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Suspect Dossier Explorer</h1>
+        <p className="text-xs text-slate-400 mt-1">Detailed profile inspection, behavioral metrics, and connected assets.</p>
+      </div>
+
+      {/* Search Input */}
+      <div className="relative max-w-md">
+        <SearchIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search suspects, phones, or accounts..."
+          className="w-full bg-[#111827] border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+        />
+      </div>
+
+      {/* Full Dossier Card (No cramped split screen) */}
+      <div className="p-6 rounded-xl bg-[#111827] border border-slate-800 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center font-bold text-xl text-blue-400">
+              {active.name.split(' ').map(w => w[0]).join('').slice(0, 2)}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-100">{active.name}</h2>
+                <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-semibold text-slate-300">
+                  {active.type}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">{active.role}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <span className="text-[10px] text-slate-500 block uppercase font-medium">Threat Rating</span>
+              <span className="text-sm font-bold text-rose-400">{active.risk} ({active.score}%)</span>
+            </div>
+            <button
+              onClick={() => go('/network')}
+              className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Show in Graph</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Attribute Details Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800/80">
+            <span className="text-[10px] text-slate-500 font-semibold uppercase block">Primary Contact</span>
+            <span className="text-xs font-mono font-medium text-slate-200 mt-1 block">{active.phone}</span>
+          </div>
+          <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800/80">
+            <span className="text-[10px] text-slate-500 font-semibold uppercase block">Associated Organization</span>
+            <span className="text-xs font-medium text-slate-200 mt-1 block truncate">{active.org}</span>
+          </div>
+          <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800/80">
+            <span className="text-[10px] text-slate-500 font-semibold uppercase block">Observed Location</span>
+            <span className="text-xs font-medium text-slate-200 mt-1 block">{active.location}</span>
+          </div>
+          <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800/80">
+            <span className="text-[10px] text-slate-500 font-semibold uppercase block">Known Aliases</span>
+            <span className="text-xs font-medium text-slate-200 mt-1 block">{active.aliases || 'None'}</span>
+          </div>
+        </div>
+
+        {/* Entity Selector Pills */}
+        <div>
+          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">
+            Select Syndicate Profile
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+            {filtered.map(e => (
+              <button
+                key={e.id}
+                onClick={() => setSelectedEntity(e.id)}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  selectedEntity === e.id
+                    ? 'bg-blue-600/10 border-blue-500/50 text-white'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                }`}
+              >
+                <div className="text-xs font-semibold text-slate-200">{e.name}</div>
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">{e.role}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   EVIDENCE VAULT (NO SPLIT SCREEN!)
+-------------------------------------------------------------------------- */
+function EvidenceView() {
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([
+    { id: 1, name: 'CDR_Interception_Log_Mumbai_Jan2026.csv', size: '1.4 MB', hash: '8f92a1c0d481bb209e51c890f12a4b89c7d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5', height: 1, date: '2026-09-14 10:15', category: 'Call Detail Record' },
+    { id: 2, name: 'RTGS_Hawala_Transfer_Records_HDFC.xlsx', size: '2.8 MB', hash: '3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f', height: 2, date: '2026-09-14 11:30', category: 'Financial Transaction' },
+    { id: 3, name: 'Seizure_FIR_Contraband_Nhava_Sheva.pdf', size: '4.1 MB', hash: '5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b', height: 3, date: '2026-09-14 14:02', category: 'First Information Report' }
+  ]);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('caseId', 'CASE-1024');
+
+    fetch('/api/evidence/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.evidence) {
+          setUploadedFiles(prev => [
+            {
+              id: Date.now(),
+              name: data.evidence.fileName,
+              size: `${(data.evidence.fileSize / 1024).toFixed(1)} KB`,
+              hash: data.evidence.sha256Hash,
+              height: data.evidence.blockHeight,
+              date: new Date().toLocaleString(),
+              category: 'Digital Exhibit'
+            },
+            ...prev
+          ]);
+        }
+        setUploading(false);
+      })
+      .catch(() => setUploading(false));
+  };
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Digital Evidence Vault</h1>
+        <p className="text-xs text-slate-400 mt-1">Section 63 BSA cryptographic ledger exhibits and pre-ingestion SHA-256 hashes.</p>
+      </div>
+
+      {/* Upload Box (Full Width, Sleek) */}
+      <div className="p-8 rounded-xl bg-[#111827] border border-dashed border-slate-700 text-center hover:border-blue-500 transition-colors">
+        <Upload className="w-8 h-8 text-blue-400 mx-auto mb-3" />
+        <h3 className="text-sm font-semibold text-slate-200">Ingest Digital Evidence File</h3>
+        <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 mb-4">
+          Upload CDR spreadsheets, banking RTGS ledgers, or surveillance scans to compute SHA-256 and anchor into the blockchain ledger.
+        </p>
+        <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer transition-colors">
+          <span>{uploading ? 'Calculating SHA-256 & Anchoring...' : 'Select File to Ingest'}</span>
+          <input type="file" onChange={handleFileUpload} disabled={uploading} className="hidden" />
+        </label>
+      </div>
+
+      {/* Exhibits Table (Full Width) */}
+      <div className="rounded-xl bg-[#111827] border border-slate-800 overflow-hidden">
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">Anchored Digital Exhibits</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Continuous cryptographic custody chain</p>
+          </div>
+          <span className="text-xs text-emerald-400 font-medium">✓ Cryptographically Locked</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-900/50 border-b border-slate-800 text-slate-400 font-medium">
+              <tr>
+                <th className="py-3 px-4">Exhibit Name</th>
+                <th className="py-3 px-4">Category</th>
+                <th className="py-3 px-4">SHA-256 Hash Digest</th>
+                <th className="py-3 px-4">Block #</th>
+                <th className="py-3 px-4">File Size</th>
+                <th className="py-3 px-4 text-right">Integrity Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {uploadedFiles.map(f => (
+                <tr key={f.id} className="hover:bg-slate-800/40 transition-colors">
+                  <td className="py-3.5 px-4 font-medium text-slate-100 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span>{f.name}</span>
+                  </td>
+                  <td className="py-3.5 px-4 text-slate-400">{f.category}</td>
+                  <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400 truncate max-w-xs" title={f.hash}>
+                    {f.hash.slice(0, 28)}...
+                  </td>
+                  <td className="py-3.5 px-4 font-mono font-bold text-blue-400">Block #{f.height}</td>
+                  <td className="py-3.5 px-4 text-slate-400">{f.size}</td>
+                  <td className="py-3.5 px-4 text-right">
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-semibold">
+                      VERIFIED (BSA-63)
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   ALERTS VIEW
+-------------------------------------------------------------------------- */
+function AlertsView({ go }) {
+  const alerts = [
+    { id: 1, title: 'Hawala Funds Routing Anomaly', priority: 'HIGH', time: '12 mins ago', desc: 'Unusual rapid successive transfers of INR 14.2 Cr between HDFC A/C and offshore shell account.' },
+    { id: 2, title: 'Burner SIM Tower Handoff Peak', priority: 'HIGH', time: '45 mins ago', desc: 'Handset associated with Rajesh Kumar logged 28 short calls near terminal gate.' },
+    { id: 3, title: 'Transit ANPR Overlap Detected', priority: 'MEDIUM', time: '2 hours ago', desc: 'Transport truck MH-04-AZ-9921 arrived at bonded warehouse outside declared schedule.' }
+  ];
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Intelligence Alerts</h1>
+        <p className="text-xs text-slate-400 mt-1">Real-time alerts triggered by graph pattern analysis and surveillance feeds.</p>
+      </div>
+
+      <div className="space-y-3">
+        {alerts.map(a => (
+          <div key={a.id} className="p-4 rounded-xl bg-[#111827] border border-slate-800 flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                  a.priority === 'HIGH' 
+                    ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' 
+                    : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                }`}>
+                  {a.priority}
+                </span>
+                <h3 className="text-xs font-semibold text-slate-100">{a.title}</h3>
+                <span className="text-[11px] text-slate-500">• {a.time}</span>
+              </div>
+              <p className="text-xs text-slate-400">{a.desc}</p>
+            </div>
+            <button
+              onClick={() => go('/network')}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors shrink-0"
+            >
+              Investigate
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   DOCUMENTATION & HELP VIEW
+-------------------------------------------------------------------------- */
+function HelpView() {
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Section 63 BSA & System Guide</h1>
+        <p className="text-xs text-slate-400 mt-1">Legal admissibility standards and investigative workflows.</p>
+      </div>
+
+      <div className="p-6 rounded-xl bg-[#111827] border border-slate-800 space-y-4 text-xs text-slate-300 leading-relaxed">
+        <h3 className="text-sm font-semibold text-slate-100">Section 63 Bharatiya Sakshya Adhiniyam, 2023</h3>
+        <p>
+          Section 63 of the BSA 2023 governs the admissibility of electronic records in judicial proceedings, replacing Section 65B of the Indian Evidence Act, 1872. Under Section 63, electronic records are deemed documents and admissible without further proof provided the chain of custody and integrity can be demonstrated.
+        </p>
+        <p>
+          This platform implements continuous cryptographic hashing: every ingested exhibit receives an authoritative SHA-256 digest before storage, and is chained into an append-only block ledger linking timestamp, previous block hash, and officer credentials.
+        </p>
+      </div>
+
+      <div className="p-6 rounded-xl bg-[#111827] border border-slate-800 space-y-3">
+        <h3 className="text-sm font-semibold text-slate-100">Keyboard Shortcuts</h3>
+        <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
+          <div className="flex justify-between py-1 border-b border-slate-800">
+            <span>Search nodes</span>
+            <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">⌘ K</kbd>
+          </div>
+          <div className="flex justify-between py-1 border-b border-slate-800">
+            <span>Reset graph view</span>
+            <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">R</kbd>
+          </div>
+          <div className="flex justify-between py-1 border-b border-slate-800">
+            <span>Close drawer</span>
+            <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">ESC</kbd>
+          </div>
+          <div className="flex justify-between py-1 border-b border-slate-800">
+            <span>Zoom In / Out</span>
+            <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">+ / -</kbd>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   MAIN NEXUS APP SHELL
+-------------------------------------------------------------------------- */
+export default function NexusApp({ initialPage = '/dashboard' }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated, initialize, isLoading } = useAuthStore();
+
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [provisionOpen, setProvisionOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  // Navigate helper
+  const go = (path) => {
+    router.push(path);
+  };
+
+  const currentPath = pathname || initialPage;
+
+  return (
+    <div className="min-h-screen bg-[#090D16] text-slate-100 flex flex-col lg:flex-row antialiased">
+      {/* Sidebar */}
+      <Sidebar
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        onOpenProvision={() => setProvisionOpen(true)}
+        onOpenAudit={() => setAuditOpen(true)}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar onMenu={() => setMobileOpen(true)} />
+
+        <main className="flex-1 overflow-y-auto">
+          {currentPath === '/dashboard' && <DashboardView go={go} />}
+          {currentPath === '/network' && (
+            <div className="p-6 max-w-[1600px] mx-auto">
+              <div className="mb-4">
+                <h1 className="text-xl font-semibold text-slate-100">Criminal Network Explorer</h1>
+                <p className="text-xs text-slate-400 mt-1">Interactive syndicate topology powered by Neo4j and centrality analytics.</p>
+              </div>
+              <NetworkGraph onOpenEvidence={() => go('/data')} />
+            </div>
+          )}
+          {currentPath === '/investigate' && <InvestigateView go={go} />}
+          {currentPath === '/data' && <EvidenceView />}
+          {currentPath === '/alerts' && <AlertsView go={go} />}
+          {currentPath === '/help' && <HelpView />}
+        </main>
+      </div>
+
+      {/* Modals */}
+      {provisionOpen && <ProvisionOfficerModal onClose={() => setProvisionOpen(false)} />}
+      {auditOpen && <AuditLedgerModal onClose={() => setAuditOpen(false)} />}
+    </div>
+  );
+}
