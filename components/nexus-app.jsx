@@ -9,7 +9,8 @@ import {
   LogOut, ChevronRight, CheckCircle2, AlertTriangle, 
   FolderOpen, ShieldCheck, Flame, Activity, Upload, 
   FileText, ExternalLink, Menu, X, ArrowUpRight,
-  Building, Phone, MapPin, Truck, CreditCard, User
+  Building, Phone, MapPin, Truck, CreditCard, User,
+  ChevronDown, ShieldAlert
 } from 'lucide-react';
 
 import { useAuthStore } from '@/lib/auth-store';
@@ -182,7 +183,7 @@ function Sidebar({ mobileOpen, setMobileOpen, onOpenProvision, onOpenAudit }) {
 /* --------------------------------------------------------------------------
    TOPBAR
 -------------------------------------------------------------------------- */
-function Topbar({ onMenu }) {
+function Topbar({ onMenu, activeCase, setActiveCase, cases = [] }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuthStore();
@@ -191,19 +192,56 @@ function Topbar({ onMenu }) {
     : user?.role === 'CYBER_ANALYST' ? 'Cyber Analyst' 
     : 'Investigating Officer';
 
+  const currentCase = cases.find(c => c.id === activeCase);
+  const isAssignedToIO = user?.role === 'INVESTIGATING_OFFICER' && currentCase?.assignedOfficerPno === user?.pno;
+
   return (
     <header className="h-16 px-6 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between gap-4 sticky top-0 z-30">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <button 
           onClick={onMenu} 
           className="lg:hidden p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-800"
         >
           <Menu className="w-5 h-5" />
         </button>
-        <h2 className="text-sm font-semibold text-slate-100">{PAGE_TITLES[pathname] || 'Workspace'}</h2>
+        <h2 className="text-sm font-semibold text-slate-100 hidden md:block shrink-0">{PAGE_TITLES[pathname] || 'Workspace'}</h2>
+
+        {/* Active Case Selector Dropdown */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <select
+              value={activeCase}
+              onChange={(e) => setActiveCase(e.target.value)}
+              className="bg-slate-900 border border-slate-700/80 hover:border-slate-600 text-xs font-semibold text-slate-200 rounded-lg pl-3 pr-8 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer appearance-none max-w-[240px] sm:max-w-xs truncate"
+              title="Select Active Investigation Case"
+            >
+              {(cases.length > 0 ? cases : [
+                { id: 'CASE-1024', caseNumber: 'FIR-2026-MUM-1024', title: 'Maritime Hawala & Contraband Network' },
+                { id: 'CASE-1021', caseNumber: 'FIR-2026-MUM-1021', title: 'Automated Ransomware Syndicate' },
+                { id: 'CASE-1018', caseNumber: 'FIR-2026-MUM-1018', title: 'Synthetic Narcotics Distribution' }
+              ]).map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.caseNumber ? `${c.caseNumber}` : c.id} · {c.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* IO Assignment Badge */}
+          {user?.role === 'INVESTIGATING_OFFICER' && (
+            <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded ${
+              isAssignedToIO
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+            }`}>
+              {isAssignedToIO ? '✓ Assigned' : '⚠ Restricted'}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0">
         <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
           <span className="font-medium text-slate-300">{roleName}</span>
@@ -227,19 +265,12 @@ function Topbar({ onMenu }) {
 /* --------------------------------------------------------------------------
    DASHBOARD VIEW (NO SPLIT SCREEN!)
 -------------------------------------------------------------------------- */
-function DashboardView({ go }) {
-  const [cases, setCases] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/cases', { credentials: 'include' })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data && data.cases) setCases(data.cases);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+function DashboardView({ go, activeCase = 'CASE-1024', setActiveCase, cases = [] }) {
+  const displayCases = cases.length > 0 ? cases : [
+    { id: 'CASE-1024', caseNumber: 'FIR-2026-MUM-1024', title: 'Maritime Hawala & Contraband Network', category: 'Syndicate Smuggling', suspectCount: 6, status: 'ACTIVE', isSealed: false },
+    { id: 'CASE-1021', caseNumber: 'FIR-2026-MUM-1021', title: 'Automated Ransomware Syndicate', category: 'Cyber Extortion', suspectCount: 4, status: 'SEALED', isSealed: true },
+    { id: 'CASE-1018', caseNumber: 'FIR-2026-MUM-1018', title: 'Synthetic Narcotics Distribution', category: 'Narcotics Cartel', suspectCount: 5, status: 'ACTIVE', isSealed: false }
+  ];
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -265,7 +296,7 @@ function DashboardView({ go }) {
             <span>Active Cases</span>
             <FolderOpen className="w-4 h-4 text-blue-400" />
           </div>
-          <div className="text-2xl font-semibold text-slate-100">{cases.length || 3}</div>
+          <div className="text-2xl font-semibold text-slate-100">{displayCases.length}</div>
           <div className="text-[11px] text-emerald-400 mt-1 font-medium">All active under jurisdiction</div>
         </div>
 
@@ -297,8 +328,8 @@ function DashboardView({ go }) {
         </div>
       </div>
 
-      {/* Reactive Blockchain Shield */}
-      <BlockchainShield caseId="CASE-1024" />
+      {/* Reactive Blockchain Shield (Scoped to activeCase) */}
+      <BlockchainShield caseId={activeCase} />
 
       {/* Investigations Table (Full Width) */}
       <div className="rounded-xl bg-[#111827] border border-slate-800 overflow-hidden">
@@ -329,43 +360,54 @@ function DashboardView({ go }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {(cases.length > 0 ? cases : [
-                { id: 'CASE-1024', caseNumber: 'FIR-2026-MUM-1024', title: 'Maritime Hawala & Contraband Network', category: 'Syndicate Smuggling', suspectCount: 6, status: 'ACTIVE', isSealed: false },
-                { id: 'CASE-1021', caseNumber: 'FIR-2026-MUM-1021', title: 'Automated Ransomware Syndicate', category: 'Cyber Extortion', suspectCount: 4, status: 'SEALED', isSealed: true },
-                { id: 'CASE-1018', caseNumber: 'FIR-2026-MUM-1018', title: 'Synthetic Narcotics Distribution', category: 'Narcotics Cartel', suspectCount: 5, status: 'ACTIVE', isSealed: false }
-              ]).map(c => (
-                <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-semibold text-blue-400">{c.caseNumber || c.id}</td>
-                  <td className="py-3.5 px-4 font-medium text-slate-100">{c.title}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-medium">
-                      {c.category}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4">{c.suspectCount || 6} linked nodes</td>
-                  <td className="py-3.5 px-4">
-                    {c.isSealed ? (
-                      <span className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        Sealed (BSA-63)
+              {displayCases.map(c => {
+                const isCurrent = c.id === activeCase;
+                return (
+                  <tr key={c.id} className={`hover:bg-slate-800/40 transition-colors ${isCurrent ? 'bg-blue-950/20' : ''}`}>
+                    <td className="py-3.5 px-4 font-mono font-semibold text-blue-400">
+                      <div className="flex items-center gap-2">
+                        {c.caseNumber || c.id}
+                        {isCurrent && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-medium text-slate-100">{c.title}</td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-medium">
+                        {c.category}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        Active Investigation
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => go('/network')}
-                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
-                    >
-                      Explore Graph
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-3.5 px-4">{c.suspectCount || 6} linked nodes</td>
+                    <td className="py-3.5 px-4">
+                      {c.isSealed ? (
+                        <span className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                          Sealed (BSA-63)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Active Investigation
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() => {
+                          if (setActiveCase) setActiveCase(c.id);
+                          go('/network');
+                        }}
+                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                      >
+                        Explore Graph
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -559,7 +601,8 @@ function InvestigateView({ go }) {
 /* --------------------------------------------------------------------------
    EVIDENCE VAULT (NO SPLIT SCREEN!)
 -------------------------------------------------------------------------- */
-function EvidenceView() {
+function EvidenceView({ activeCase = 'CASE-1024' }) {
+  const { user, canIngestEvidence } = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([
     { id: 1, name: 'CDR_Interception_Log_Mumbai_Jan2026.csv', size: '1.4 MB', hash: '8f92a1c0d481bb209e51c890f12a4b89c7d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5', height: 1, date: '2026-09-14 10:15', category: 'Call Detail Record' },
@@ -574,7 +617,7 @@ function EvidenceView() {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('caseId', 'CASE-1024');
+    formData.append('caseId', activeCase);
 
     fetch('/api/evidence/upload', {
       method: 'POST',
@@ -604,30 +647,59 @@ function EvidenceView() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-100">Digital Evidence Vault</h1>
-        <p className="text-xs text-slate-400 mt-1">Section 63 BSA cryptographic ledger exhibits and pre-ingestion SHA-256 hashes.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-100">Digital Evidence Vault</h1>
+          <p className="text-xs text-slate-400 mt-1">Section 63 BSA cryptographic ledger exhibits and pre-ingestion SHA-256 hashes.</p>
+        </div>
+        <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-400 font-mono">
+          Scoped Case: <b className="text-blue-400 font-semibold">{activeCase}</b>
+        </div>
       </div>
 
-      {/* Upload Box (Full Width, Sleek) */}
-      <div className="p-8 rounded-xl bg-[#111827] border border-dashed border-slate-700 text-center hover:border-blue-500 transition-colors">
-        <Upload className="w-8 h-8 text-blue-400 mx-auto mb-3" />
-        <h3 className="text-sm font-semibold text-slate-200">Ingest Digital Evidence File</h3>
-        <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 mb-4">
-          Upload CDR spreadsheets, banking RTGS ledgers, or surveillance scans to compute SHA-256 and anchor into the blockchain ledger.
-        </p>
-        <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer transition-colors">
-          <span>{uploading ? 'Calculating SHA-256 & Anchoring...' : 'Select File to Ingest'}</span>
-          <input type="file" onChange={handleFileUpload} disabled={uploading} className="hidden" />
-        </label>
-      </div>
+      {/* Upload Box or Role-Restricted Warning */}
+      {canIngestEvidence() ? (
+        <div className="p-8 rounded-xl bg-[#111827] border border-dashed border-slate-700 text-center hover:border-blue-500 transition-colors">
+          <Upload className="w-8 h-8 text-blue-400 mx-auto mb-3" />
+          <h3 className="text-sm font-semibold text-slate-200">Ingest Digital Evidence File</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 mb-4">
+            Upload CDR spreadsheets, banking RTGS ledgers, or surveillance scans to compute SHA-256 and anchor into the blockchain ledger for <b className="text-slate-200">{activeCase}</b>.
+          </p>
+          <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer transition-colors">
+            <span>{uploading ? 'Calculating SHA-256 & Anchoring...' : 'Select File to Ingest'}</span>
+            <input type="file" onChange={handleFileUpload} disabled={uploading} className="hidden" />
+          </label>
+        </div>
+      ) : (
+        <div className="p-6 rounded-xl bg-slate-900/80 border border-amber-500/30 flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                Raw Ingestion Pipeline Restricted
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                Clearance Gated
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Raw Ingestion Pipeline Restricted: Investigating Officers cannot upload raw exhibits. Clearance limited to Cyber Forensics Analysts and Supervisors.
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Under Section 63 BSA evidence preservation rules, exhibits must undergo forensic verification and cryptographic indexing through the Cyber Forensic Unit before appearing in the primary dossier.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Exhibits Table (Full Width) */}
       <div className="rounded-xl bg-[#111827] border border-slate-800 overflow-hidden">
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-100">Anchored Digital Exhibits</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Continuous cryptographic custody chain</p>
+            <p className="text-xs text-slate-400 mt-0.5">Continuous cryptographic custody chain for {activeCase}</p>
           </div>
           <span className="text-xs text-emerald-400 font-medium">✓ Cryptographically Locked</span>
         </div>
@@ -773,6 +845,8 @@ export default function NexusApp({ initialPage = '/dashboard' }) {
   const router = useRouter();
   const { isAuthenticated, initialize, isLoading } = useAuthStore();
 
+  const [activeCase, setActiveCase] = useState('CASE-1024');
+  const [cases, setCases] = useState([]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -780,6 +854,17 @@ export default function NexusApp({ initialPage = '/dashboard' }) {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    fetch('/api/cases', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.cases) {
+          setCases(data.cases);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Navigate helper
   const go = (path) => {
@@ -800,21 +885,37 @@ export default function NexusApp({ initialPage = '/dashboard' }) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar onMenu={() => setMobileOpen(true)} />
+        <Topbar
+          onMenu={() => setMobileOpen(true)}
+          activeCase={activeCase}
+          setActiveCase={setActiveCase}
+          cases={cases}
+        />
 
         <main className="flex-1 overflow-y-auto">
-          {currentPath === '/dashboard' && <DashboardView go={go} />}
+          {currentPath === '/dashboard' && (
+            <DashboardView
+              go={go}
+              activeCase={activeCase}
+              setActiveCase={setActiveCase}
+              cases={cases}
+            />
+          )}
           {currentPath === '/network' && (
             <div className="p-6 max-w-[1600px] mx-auto">
               <div className="mb-4">
                 <h1 className="text-xl font-semibold text-slate-100">Criminal Network Explorer</h1>
                 <p className="text-xs text-slate-400 mt-1">Interactive syndicate topology powered by Neo4j and centrality analytics.</p>
               </div>
-              <NetworkGraph onOpenEvidence={() => go('/data')} />
+              <NetworkGraph
+                caseId={activeCase}
+                onCaseChange={setActiveCase}
+                onOpenEvidence={() => go('/data')}
+              />
             </div>
           )}
           {currentPath === '/investigate' && <InvestigateView go={go} />}
-          {currentPath === '/data' && <EvidenceView />}
+          {currentPath === '/data' && <EvidenceView activeCase={activeCase} />}
           {currentPath === '/alerts' && <AlertsView go={go} />}
           {currentPath === '/help' && <HelpView />}
         </main>

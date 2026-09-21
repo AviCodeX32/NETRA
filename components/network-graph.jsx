@@ -7,9 +7,11 @@ import {
   ShieldAlert, Share2, Info, Eye, Layers,
   ChevronRight, X, Activity, ShieldCheck, Flame, RefreshCw,
   ExternalLink, ArrowRight, Zap, Target, AlertOctagon,
-  Sparkles, FileText, Check, Copy, Radio, Scissors
+  Sparkles, FileText, Check, Copy, Radio, Scissors,
+  AlertTriangle, GitMerge, Lock
 } from 'lucide-react';
 import { api } from '@/lib/api-client';
+import { useAuthStore } from '@/lib/auth-store';
 
 const ENTITY_CONFIG = {
   PERSON: { label: 'Person', icon: User, color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/30' },
@@ -20,7 +22,7 @@ const ENTITY_CONFIG = {
   ACCOUNT: { label: 'Account', icon: CreditCard, color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/30' }
 };
 
-export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onOpenEvidence }) {
+export default function NetworkGraph({ caseId = 'CASE-1024', onCaseChange, onSelectEntity, onOpenEvidence }) {
   const [activeCase, setActiveCase] = useState(caseId);
   const [casesList, setCasesList] = useState([]);
   const [graphData, setGraphData] = useState({ nodes: [], edges: [], stats: {} });
@@ -28,6 +30,8 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const { user, canResolveEntities, canMergeEntities } = useAuthStore();
   
   // Controls
   const [zoom, setZoom] = useState(1);
@@ -37,6 +41,13 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
   const [influencerOnly, setInfluencerOnly] = useState(false);
   const [patternsList, setPatternsList] = useState([]);
   const [showPatternsModal, setShowPatternsModal] = useState(false);
+
+  // Entity Resolution (Jaro-Winkler) state
+  const [resolutionModalOpen, setResolutionModalOpen] = useState(false);
+  const [resolutionLoading, setResolutionLoading] = useState(false);
+  const [resolutionCandidates, setResolutionCandidates] = useState([]);
+  const [mergeSuccessMsg, setMergeSuccessMsg] = useState(null);
+  const [merging, setMerging] = useState(false);
 
   // Dragging state
   const isDraggingCanvas = useRef(false);
@@ -69,6 +80,18 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
   const [aiScoreResult, setAiScoreResult] = useState(null);
   const [copiedId, setCopiedId] = useState(false);
 
+  // Sync activeCase with prop caseId
+  useEffect(() => {
+    if (caseId && caseId !== activeCase) {
+      setActiveCase(caseId);
+    }
+  }, [caseId]);
+
+  const handleCaseChange = (newCaseId) => {
+    setActiveCase(newCaseId);
+    if (onCaseChange) onCaseChange(newCaseId);
+  };
+
   // 1. Fetch available cases
   useEffect(() => {
     fetch('/api/cases', { credentials: 'include' })
@@ -79,7 +102,7 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
       .catch(() => {});
   }, []);
 
-  // 2. Fetch graph data & patterns
+  // 2. Fetch case-scoped graph data & patterns
   useEffect(() => {
     setLoading(true);
     // Reset simulation when case changes
@@ -88,7 +111,7 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
     setSimTargetNode(null);
 
     Promise.all([
-      fetch(`/api/graph/${activeCase}`, { credentials: 'include' }).then(r => r.json()).catch(() => null),
+      fetch(`/api/graph/case/${activeCase}`, { credentials: 'include' }).then(r => r.json()).catch(() => null),
       fetch(`/api/analytics/patterns/${activeCase}`, { credentials: 'include' }).then(r => r.json()).catch(() => null)
     ])
       .then(([graphRes, patternRes]) => {
@@ -105,6 +128,54 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
         setLoading(false);
       });
   }, [activeCase]);
+
+  // Entity Resolution Handlers
+  const handleRunEntityResolution = async () => {
+    setResolutionLoading(true);
+    setMergeSuccessMsg(null);
+    setResolutionModalOpen(true);
+    try {
+      const res = await api.resolveEntities(activeCase);
+      if (res && res.candidates) {
+        setResolutionCandidates(res.candidates);
+      } else {
+        setResolutionCandidates([]);
+      }
+    } catch (err) {
+      console.error('Failed to resolve entities:', err);
+      setResolutionCandidates([]);
+    } finally {
+      setResolutionLoading(false);
+    }
+  };
+
+  const handleExecuteMerge = async (cand) => {
+    if (!canMergeEntities()) return;
+    setMerging(true);
+    try {
+      const res = await api.mergeEntities({
+        targetNodeId: cand.sourceId,
+        duplicateNodeId: cand.targetId,
+        masterLabel: cand.sourceLabel,
+        caseId: activeCase,
+        activeCase
+      });
+      if (res && (res.mergedNode || res.success)) {
+        setMergeSuccessMsg(`Successfully merged ${cand.targetLabel} into ${cand.sourceLabel}`);
+        setResolutionCandidates(prev => prev.filter(c => c.targetId !== cand.targetId && c.sourceId !== cand.targetId));
+        // Refresh graph data
+        const updated = await fetch(`/api/graph/case/${activeCase}`, { credentials: 'include' }).then(r => r.json());
+        if (updated && updated.nodes) {
+          setGraphData(updated);
+          computeInitialPositions(updated.nodes, updated.edges);
+        }
+      }
+    } catch (err) {
+      alert('Error executing merge: ' + (err.message || 'Permission denied'));
+    } finally {
+      setMerging(false);
+    }
+  };
 
   // Compute organic coordinates centered around central nodes
   const computeInitialPositions = (nodes, edges) => {
@@ -312,7 +383,7 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
           {casesList.length > 0 && (
             <select
               value={activeCase}
-              onChange={(e) => setActiveCase(e.target.value)}
+              onChange={(e) => handleCaseChange(e.target.value)}
               className="bg-slate-900 border border-slate-800 text-xs font-medium text-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500"
             >
               {casesList.map(c => (
@@ -366,6 +437,19 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
 
         {/* Action Controls & AI Extractor */}
         <div className="flex items-center gap-1.5 pointer-events-auto">
+          {/* Entity Resolution Button (CA & SP Only) */}
+          {canResolveEntities() && (
+            <button
+              type="button"
+              onClick={handleRunEntityResolution}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold backdrop-blur-md shadow-xl transition-all"
+              title="Run Jaro-Winkler Entity Resolution / Deduplication (CA & SP Only)"
+            >
+              <GitMerge className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Entity Resolution</span>
+            </button>
+          )}
+
           {/* LLM Entity Extraction Tool */}
           <button
             type="button"
@@ -618,6 +702,7 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
             const isConnected = connectedNodeIds.has(node.id);
             const isDimmed = (selectedNodeId || hoveredNodeId) && !isSelected && !isConnected;
             const isHub = (node.riskScore > 0.85) || node.properties?.role?.includes('Ringleader');
+            const hasCollision = Boolean(node.hasCrossCaseCollision || (node.otherCases && node.otherCases.length > 0));
 
             // Tactical Simulation flags
             const isApprehended = simulationActive && simTargetNode?.id === node.id;
@@ -654,6 +739,17 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
                   </div>
                 )}
 
+                {/* Floating Badge for Cross-Case Collision */}
+                {hasCollision && !isApprehended && !isSuccessor && (
+                  <div
+                    className="absolute -top-7 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-extrabold text-[9px] shadow-lg shadow-amber-500/40 flex items-center gap-1 z-10 whitespace-nowrap"
+                    title={`Active across multiple cases: ${node.otherCases?.join(', ') || 'Cross-Case Entity'}`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5 fill-current" />
+                    <span>CROSS-CASE ({node.otherCases?.length || 1})</span>
+                  </div>
+                )}
+
                 {/* Circular Node Icon Avatar */}
                 <div className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
                   isApprehended
@@ -662,15 +758,22 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
                       ? 'ring-4 ring-amber-400 bg-amber-950/80 scale-110 shadow-xl shadow-amber-500/40 animate-pulse'
                       : isSelected 
                         ? 'ring-2 ring-blue-500 bg-blue-950/80 scale-110 shadow-lg shadow-blue-500/20' 
-                        : isHub 
-                          ? 'ring-2 ring-amber-500/80 bg-slate-900 shadow-md shadow-amber-500/10'
-                          : 'bg-slate-900/95 border border-slate-700/80 group-hover:border-slate-500 shadow-md'
+                        : hasCollision
+                          ? 'ring-2 ring-amber-400 bg-amber-950/30 border border-amber-400/80 shadow-md shadow-amber-500/20'
+                          : isHub 
+                            ? 'ring-2 ring-amber-500/80 bg-slate-900 shadow-md shadow-amber-500/10'
+                            : 'bg-slate-900/95 border border-slate-700/80 group-hover:border-slate-500 shadow-md'
                 }`}>
                   <Icon className={`w-5 h-5 ${isApprehended ? 'text-rose-300' : isSuccessor ? 'text-amber-300' : conf.color}`} />
                   
                   {isHub && !isApprehended && !isSuccessor && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center text-[9px] font-bold text-slate-950" title="Key Influencer / Ringleader">
                       ★
+                    </span>
+                  )}
+                  {hasCollision && !isHub && !isApprehended && !isSuccessor && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[9px] font-black" title={`Active in multiple cases: ${node.otherCases?.join(', ')}`}>
+                      !
                     </span>
                   )}
                 </div>
@@ -809,6 +912,39 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
               <span>{simulating ? 'Calculating Network Impact...' : 'Simulate Apprehension (What-If)'}</span>
             </button>
           </div>
+
+          {/* Cross-Case Collision Alert Box */}
+          {(selectedNode.hasCrossCaseCollision || (selectedNode.otherCases && selectedNode.otherCases.length > 0)) && (
+            <div className="my-3 p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-amber-300 font-bold uppercase tracking-wider text-[11px]">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Cross-Case Collision Alert</span>
+              </div>
+              <p className="text-slate-300 text-xs leading-relaxed">
+                Collision Alert: This entity is active across multiple investigations:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {(selectedNode.otherCases || []).map(cId => (
+                  <span key={cId} className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">
+                    {cId}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                This entity bridges separate criminal syndicates. Cross-case identity deduplication or inter-unit coordination may be required.
+              </p>
+              {canResolveEntities() && (
+                <button
+                  type="button"
+                  onClick={handleRunEntityResolution}
+                  className="w-full py-1.5 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                  <span>Inspect Deduplication & Merges</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Properties / Known Identifiers */}
           <div className="py-4 border-b border-slate-800 space-y-3">
@@ -1044,6 +1180,129 @@ export default function NetworkGraph({ caseId = 'CASE-1024', onSelectEntity, onO
             <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex justify-end">
               <button
                 onClick={() => setShowPatternsModal(false)}
+                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------------------
+          ENTITY RESOLUTION (JARO-WINKLER) MODAL
+      --------------------------------------------------------------------- */}
+      {resolutionModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F172A] border border-slate-800 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100">Jaro-Winkler Entity Resolution & Deduplication</h3>
+                  <p className="text-[11px] text-slate-400">Detect cross-case identity collisions, alias overlaps, and phone number links</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResolutionModalOpen(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {mergeSuccessMsg && (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{mergeSuccessMsg}</span>
+                </div>
+              )}
+
+              {resolutionLoading ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin mx-auto mb-2" />
+                  <span>Analyzing string similarity metrics and graph collisions for {activeCase}...</span>
+                </div>
+              ) : resolutionCandidates.length === 0 ? (
+                <div className="py-10 text-center text-xs text-slate-400 space-y-1">
+                  <ShieldCheck className="w-8 h-8 text-emerald-500/60 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-300">No duplicate candidates detected (&ge;85% threshold).</p>
+                  <p className="text-[11px] text-slate-500">All entities currently indexed have distinct canonical identifiers.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-xs text-slate-400">
+                    Found <b className="text-slate-200">{resolutionCandidates.length}</b> identity candidate pair(s) in active investigation:
+                  </div>
+
+                  {resolutionCandidates.map((cand, idx) => (
+                    <div key={idx} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            {cand.similarityScore ? `${Math.round(cand.similarityScore * 100)}% Similarity` : 'High Overlap'}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-200">
+                            {cand.sourceLabel} &harr; {cand.targetLabel}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          Method: {cand.reason || 'Jaro-Winkler'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase block">Canonical Record</span>
+                          <div className="font-semibold text-slate-200">{cand.sourceLabel}</div>
+                          <div className="text-[10px] text-slate-400">{cand.sourceType} · {cand.sourceId}</div>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase block">Duplicate Record</span>
+                          <div className="font-semibold text-slate-200">{cand.targetLabel}</div>
+                          <div className="text-[10px] text-slate-400">{cand.targetType} · {cand.targetId}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                        <div className="text-[11px] text-slate-400">
+                          Merges attributes, preserves custody chain, and unifies incident edges.
+                        </div>
+
+                        {canMergeEntities() ? (
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteMerge(cand)}
+                            disabled={merging}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <GitMerge className="w-3.5 h-3.5" />
+                            <span>{merging ? 'Merging...' : 'Approve & Execute Merge (SP)'}</span>
+                          </button>
+                        ) : (
+                          <div
+                            className="px-3 py-1.5 rounded-lg bg-slate-950 text-slate-500 border border-slate-800 text-xs font-medium flex items-center gap-1.5 cursor-not-allowed"
+                            title="Supervisor (SP) clearance required to execute identity merges"
+                          >
+                            <Lock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>SP Approval Required</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Merges logged immutably under Section 63 BSA audit trail.
+              </span>
+              <button
+                type="button"
+                onClick={() => setResolutionModalOpen(false)}
                 className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
               >
                 Close

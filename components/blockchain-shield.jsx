@@ -148,15 +148,26 @@ export default function BlockchainShield({ caseId = 'CASE-1024' }) {
             <span>Court Certificate</span>
           </button>
 
-          {canSealCase() && !caseStatus.isSealed && (
-            <button
-              onClick={handleSealCase}
-              disabled={sealing}
-              className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 text-xs font-medium text-amber-300 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span>{sealing ? 'Sealing...' : 'Seal Case'}</span>
-            </button>
+          {!caseStatus.isSealed && (
+            canSealCase() ? (
+              <button
+                onClick={handleSealCase}
+                disabled={sealing}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 text-xs font-medium text-amber-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>{sealing ? 'Sealing...' : 'Seal Case'}</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                title="Supervisor (SP) Authority Required to legally seal case under Section 63 BSA"
+                className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-500 flex items-center gap-1.5 cursor-not-allowed opacity-60"
+              >
+                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                <span>Seal Case (SP Only)</span>
+              </button>
+            )
           )}
 
           <button
