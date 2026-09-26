@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Nexus Intelligence | Criminal Network & Case Analysis',
-  description: 'Forensic criminal network analysis platform with Neo4j graph topology and Section 63 BSA cryptographic chain of custody.',
+  description: 'Forensic criminal network analysis platform with graph topology and tamper-evident evidence chain of custody.',
   icons: {
     icon: [
       {

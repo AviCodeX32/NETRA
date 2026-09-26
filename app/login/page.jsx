@@ -24,7 +24,7 @@ export default function LoginPage() {
   // If already authenticated, forward to dashboard
   useEffect(() => {
     if (isAuthenticated) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
     }
   }, [isAuthenticated, router]);
 
@@ -47,7 +47,7 @@ export default function LoginPage() {
 
     setSubmitting(false);
     if (result.success) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } else {
       setLocalError(result.error || 'Authentication failed. Please verify your credentials.');
     }
@@ -193,7 +193,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-800/80 flex items-center justify-center text-xs text-slate-500">
-          <span>Protected by Section 63 BSA Blockchain Chain of Custody</span>
+          <span>Encrypted Law Enforcement Session</span>
         </div>
       </div>
     </div>

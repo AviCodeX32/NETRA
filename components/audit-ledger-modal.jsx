@@ -34,7 +34,7 @@ export default function AuditLedgerModal({ onClose }) {
             <Shield className="w-5 h-5 text-blue-400" />
             <div>
               <h3 className="font-semibold text-sm text-slate-100">Security & Access Audit Ledger</h3>
-              <p className="text-[11px] text-slate-400">Section 63 BSA Forensic Traceability</p>
+              <p className="text-[11px] text-slate-400">Immutable Case Audit Trail</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -69,7 +69,7 @@ export default function AuditLedgerModal({ onClose }) {
               </thead>
               <tbody className="divide-y divide-slate-800/40">
                 {(logs.length > 0 ? logs : [
-                  { id: 1, timestamp: '2026-09-14T14:10:00Z', action: 'AUTH_SUCCESS', officer_pno: 'SP-MH-0091', details: 'Session established with LEVEL_4_TOP_SECRET clearance' },
+                  { id: 1, timestamp: '2026-09-14T14:10:00Z', action: 'AUTH_SUCCESS', officer_pno: 'SP-MH-0091', details: 'Officer authenticated successfully' },
                   { id: 2, timestamp: '2026-09-14T14:15:30Z', action: 'GRAPH_QUERY', officer_pno: 'SP-MH-0091', details: 'Retrieved network graph for CASE-1024' },
                   { id: 3, timestamp: '2026-09-14T14:22:12Z', action: 'LEDGER_VERIFIED', officer_pno: 'SP-MH-0091', details: 'Automated chain verification passed: 0 tampering detected' }
                 ]).map(log => (

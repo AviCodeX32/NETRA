@@ -60,7 +60,7 @@ export default function BlockchainShield({ caseId = 'CASE-1024' }) {
 
   // SP-restricted case sealing
   const handleSealCase = async () => {
-    if (!confirm(`Are you sure you want to officially freeze and seal ${caseId} under Section 63 BSA?\n\nThis creates an immutable sealing block on the ledger.`)) {
+    if (!confirm(`Are you sure you want to officially seal ${caseId}?\n\nThis permanently locks the case docket against further edits.`)) {
       return;
     }
 
@@ -109,7 +109,7 @@ export default function BlockchainShield({ caseId = 'CASE-1024' }) {
               </span>
               {caseStatus.isSealed && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                  <Lock className="w-2.5 h-2.5" /> SEALED (BSA-63)
+                  <Lock className="w-2.5 h-2.5" /> SEALED DOCKET
                 </span>
               )}
             </div>
@@ -161,7 +161,7 @@ export default function BlockchainShield({ caseId = 'CASE-1024' }) {
             ) : (
               <button
                 disabled
-                title="Supervisor (SP) Authority Required to legally seal case under Section 63 BSA"
+                title="Supervisor authorization required to seal case"
                 className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-500 flex items-center gap-1.5 cursor-not-allowed opacity-60"
               >
                 <Lock className="w-3.5 h-3.5 text-slate-500" />
@@ -187,7 +187,7 @@ export default function BlockchainShield({ caseId = 'CASE-1024' }) {
             <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
               Forensic Custody Chain ({ledger.length} Blocks)
             </h4>
-            <span className="text-xs text-slate-500">Section 63 BSA 2023 Compliant</span>
+            <span className="text-xs text-slate-500">Tamper-Evident Custody Chain</span>
           </div>
 
           <div className="space-y-2.5 max-h-80 overflow-y-auto">
